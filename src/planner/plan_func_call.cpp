@@ -36,9 +36,24 @@ auto Planner::PlanFuncCall(const BoundFuncCall &expr, const std::vector<Abstract
 // NOLINTNEXTLINE
 auto Planner::GetFuncCallFromFactory(const std::string &func_name, std::vector<AbstractExpressionRef> args)
     -> AbstractExpressionRef {
-  // 1. check if the parsed function name is "lower" or "upper".
-  // 2. verify the number of args (should be 1), refer to the test cases for when you should throw an `Exception`.
-  // 3. return a `StringExpression` std::shared_ptr.
+  // 转换函数名为小写以进行不区分大小写的比较
+  std::string lower_func_name = func_name;
+  std::transform(lower_func_name.begin(), lower_func_name.end(), lower_func_name.begin(), ::tolower);
+
+  // 检查参数数量
+  if (args.size() != 1) {
+    throw Exception(fmt::format("function {} expects 1 argument, got {}", func_name, args.size()));
+  }
+
+  // 根据函数名创建相应的StringExpression
+  if (lower_func_name == "lower") {
+    return std::make_shared<StringExpression>(std::move(args[0]), StringExpressionType::Lower);
+  }
+  if (lower_func_name == "upper") {
+    return std::make_shared<StringExpression>(std::move(args[0]), StringExpressionType::Upper);
+  }
+
+  // 如果不是支持的函数，抛出异常
   throw Exception(fmt::format("func call {} not supported in planner yet", func_name));
 }
 
