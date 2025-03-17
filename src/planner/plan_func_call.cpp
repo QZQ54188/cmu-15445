@@ -23,8 +23,8 @@
 
 namespace bustub {
 
-auto Planner::PlanFuncCall(const BoundFuncCall &expr, const std::vector<AbstractPlanNodeRef> &children)
-    -> AbstractExpressionRef {
+auto Planner::PlanFuncCall(const BoundFuncCall &expr,
+                           const std::vector<AbstractPlanNodeRef> &children) -> AbstractExpressionRef {
   std::vector<AbstractExpressionRef> args;
   for (const auto &arg : expr.args_) {
     auto [_1, arg_expr] = PlanExpression(*arg, children);
@@ -34,8 +34,8 @@ auto Planner::PlanFuncCall(const BoundFuncCall &expr, const std::vector<Abstract
 }
 
 // NOLINTNEXTLINE
-auto Planner::GetFuncCallFromFactory(const std::string &func_name, std::vector<AbstractExpressionRef> args)
-    -> AbstractExpressionRef {
+auto Planner::GetFuncCallFromFactory(const std::string &func_name,
+                                     std::vector<AbstractExpressionRef> args) -> AbstractExpressionRef {
   // 转换函数名为小写以进行不区分大小写的比较
   std::string lower_func_name = func_name;
   std::transform(lower_func_name.begin(), lower_func_name.end(), lower_func_name.begin(), ::tolower);
