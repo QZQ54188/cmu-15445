@@ -28,7 +28,7 @@ enum class AccessType { Unknown = 0, Lookup, Scan, Index };
 class LRUKNode {
  public:
   LRUKNode() = default;  // 默认构造函数
-  explicit LRUKNode(size_t k) {}
+  // explicit LRUKNode(size_t k) {}
 
   auto IsEvictable() const -> bool { return is_evictable_; }
   void SetEvictable(bool evictable) { is_evictable_ = evictable; }

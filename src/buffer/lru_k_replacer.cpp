@@ -37,16 +37,17 @@ auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
     if (!node.IsEvictable()) {
       continue;
     }
+    // 如果之前从来没有找到过驱逐的frame，选择当前frame驱逐
+    if (!found) {
+      found = true;
+      target = fid;
+      continue;
+    }
 
     // 找到当前node的存储历史，遍历找到最大的LRU-k差值
     const auto &history = node.GetHistory();
     if (history.size() < k_) {
-      // 如果之前从来没有找到过驱逐的frame，选择当前frame驱逐
-      if (!found) {
-        found = true;
-        target = fid;
-        continue;
-      } else if (node_store_[target].GetHistory().size() < k_) {
+      if (node_store_[target].GetHistory().size() < k_) {
         // 目标页访问次数也小于k_,比较最早访问时间
         if (history.front() < node_store_[target].GetHistory().front()) {
           target = fid;
@@ -56,11 +57,7 @@ auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
         target = fid;
       }
     } else {
-      if (!found) {
-        found = true;
-        target = fid;
-        continue;
-      } else if (node_store_[target].GetHistory().size() >= k_) {
+      if (node_store_[target].GetHistory().size() >= k_) {
         auto it_cur = history.begin();
         std::advance(it_cur, history.size() - k_);
         size_t cur_timestamp = *it_cur;
@@ -77,6 +74,7 @@ auto LRUKReplacer::Evict(frame_id_t *frame_id) -> bool {
           target = fid;
         }
       }
+      // 如果目标页面访问次数<k，当前页面访问次数>=k，优先选择之前的目标页面
     }
   }
 
