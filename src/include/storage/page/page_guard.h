@@ -83,24 +83,46 @@ class BasicPageGuard {
    */
   auto UpgradeWrite() -> WritePageGuard;
 
-  auto PageId() -> page_id_t { return page_->GetPageId(); }
+  auto PageId() -> page_id_t {
+    if (page_ == nullptr) {
+      return INVALID_PAGE_ID;
+    }
+    return page_->GetPageId();
+  }
 
-  auto GetData() -> const char * { return page_->GetData(); }
+  auto GetData() -> const char * {
+    if (page_ == nullptr) {
+      return nullptr;
+    }
+    return page_->GetData();
+  }
 
   template <class T>
   auto As() -> const T * {
+    if (page_ == nullptr) {
+      return nullptr;
+    }
     return reinterpret_cast<const T *>(GetData());
   }
 
   auto GetDataMut() -> char * {
+    if (page_ == nullptr) {
+      return nullptr;
+    }
     is_dirty_ = true;
     return page_->GetData();
   }
 
   template <class T>
   auto AsMut() -> T * {
+    if (page_ == nullptr) {
+      return nullptr;
+    }
     return reinterpret_cast<T *>(GetDataMut());
   }
+
+  /** @brief 将页面标记为脏页 */
+  void MarkDirty() { is_dirty_ = true; }
 
  private:
   friend class ReadPageGuard;

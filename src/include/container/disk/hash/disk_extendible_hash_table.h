@@ -113,15 +113,31 @@ class DiskExtendibleHashTable {
   auto InsertToNewDirectory(ExtendibleHTableHeaderPage *header, uint32_t directory_idx, uint32_t hash, const K &key,
                             const V &value) -> bool;
 
-  auto InsertToNewBucket(ExtendibleHTableDirectoryPage *directory, uint32_t bucket_idx, const K &key,
-                         const V &value) -> bool;
+  auto InsertToNewBucket(ExtendibleHTableDirectoryPage *directory, uint32_t bucket_idx, const K &key, const V &value)
+      -> bool;
 
   void UpdateDirectoryMapping(ExtendibleHTableDirectoryPage *directory, uint32_t new_bucket_idx,
                               page_id_t new_bucket_page_id, uint32_t new_local_depth, uint32_t local_depth_mask);
 
   void MigrateEntries(ExtendibleHTableBucketPage<K, V, KC> *old_bucket,
-                      ExtendibleHTableBucketPage<K, V, KC> *new_bucket, uint32_t new_bucket_idx,
-                      uint32_t local_depth_mask);
+                      ExtendibleHTableBucketPage<K, V, KC> *new_bucket, uint32_t diff_bit);
+
+  /**
+   * @brief 合并两个桶
+   *
+   * @param directory 目录页面
+   * @param bucket_idx 要合并的桶的索引
+   * @param split_image_idx 分裂镜像桶的索引
+   */
+  void MergeBuckets(ExtendibleHTableDirectoryPage *directory, uint32_t bucket_idx, uint32_t split_image_idx);
+
+  /**
+   * @brief 尝试合并空桶，如果条件满足则进行递归合并
+   *
+   * @param directory 目录页面
+   * @param bucket_idx 要合并的桶的索引
+   */
+  void TryMergeEmptyBucket(ExtendibleHTableDirectoryPage *directory, uint32_t bucket_idx);
 
   // member variables
   std::string index_name_;

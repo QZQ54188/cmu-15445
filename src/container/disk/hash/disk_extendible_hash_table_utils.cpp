@@ -25,7 +25,10 @@ namespace bustub {
  */
 template <typename K, typename V, typename KC>
 auto DiskExtendibleHashTable<K, V, KC>::Hash(K key) const -> uint32_t {
-  return static_cast<uint32_t>(hash_fn_.GetHash(key));
+  // 先获取64位的哈希值
+  uint64_t hash_64bit = hash_fn_.GetHash(key);
+  // 将64位哈希值截断为32位返回
+  return static_cast<uint32_t>(hash_64bit);
 }
 
 /**
