@@ -122,23 +122,6 @@ class DiskExtendibleHashTable {
   void MigrateEntries(ExtendibleHTableBucketPage<K, V, KC> *old_bucket,
                       ExtendibleHTableBucketPage<K, V, KC> *new_bucket, uint32_t diff_bit);
 
-  /**
-   * @brief 合并两个桶
-   *
-   * @param directory 目录页面
-   * @param bucket_idx 要合并的桶的索引
-   * @param split_image_idx 分裂镜像桶的索引
-   */
-  void MergeBuckets(ExtendibleHTableDirectoryPage *directory, uint32_t bucket_idx, uint32_t split_image_idx);
-
-  /**
-   * @brief 尝试合并空桶，如果条件满足则进行递归合并
-   *
-   * @param directory 目录页面
-   * @param bucket_idx 要合并的桶的索引
-   */
-  void TryMergeEmptyBucket(ExtendibleHTableDirectoryPage *directory, uint32_t bucket_idx);
-
   // member variables
   std::string index_name_;
   BufferPoolManager *bpm_;
