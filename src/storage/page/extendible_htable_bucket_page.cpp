@@ -18,11 +18,6 @@
 
 namespace bustub {
 
-// template <typename K, typename V, typename KC>
-// void ExtendibleHTableBucketPage<K, V, KC>::Init(uint32_t max_size) {
-
-// }
-
 template <typename K, typename V, typename KC>
 auto ExtendibleHTableBucketPage<K, V, KC>::Lookup(const K &key, V &value, const KC &cmp) const -> bool {
   for (uint32_t i = 0; i < size_; i++) {

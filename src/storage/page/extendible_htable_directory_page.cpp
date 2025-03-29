@@ -21,9 +21,8 @@
 namespace bustub {
 
 void ExtendibleHTableDirectoryPage::Init(uint32_t max_depth) {
-  // 初始化最大深度
+  // 初始化最大深度，全局深度此时为0，因为还没有进行分裂
   max_depth_ = max_depth <= HTABLE_DIRECTORY_MAX_DEPTH ? max_depth : HTABLE_DIRECTORY_MAX_DEPTH;
-  // 当前第二级逻辑块的数量为0
   global_depth_ = 0;
 
   for (size_t i = 0; i < HTABLE_DIRECTORY_ARRAY_SIZE; i++) {
@@ -33,10 +32,9 @@ void ExtendibleHTableDirectoryPage::Init(uint32_t max_depth) {
 }
 
 auto ExtendibleHTableDirectoryPage::HashToBucketIndex(uint32_t hash) const -> uint32_t {
-  // 使用哈希值的低位来确定桶索引，确保不超过当前的全局深度
+  // 使用哈希值的低位来确定桶索引
   uint32_t mask = (1U << global_depth_) - 1;
-  uint32_t index = hash & mask;
-  return index < Size() ? index : index % Size();
+  return hash & mask;
 }
 
 auto ExtendibleHTableDirectoryPage::GetBucketPageId(uint32_t bucket_idx) const -> page_id_t {
@@ -81,12 +79,7 @@ void ExtendibleHTableDirectoryPage::IncrGlobalDepth() {
   }
 }
 
-void ExtendibleHTableDirectoryPage::DecrGlobalDepth() {
-  if (!CanShrink()) {
-    throw Exception("Cannot decrease global depth");
-  }
-  global_depth_--;
-}
+void ExtendibleHTableDirectoryPage::DecrGlobalDepth() { global_depth_--; }
 
 auto ExtendibleHTableDirectoryPage::CanShrink() -> bool {
   if (global_depth_ == 0) {

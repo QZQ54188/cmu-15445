@@ -20,20 +20,19 @@ void ExtendibleHTableHeaderPage::Init(uint32_t max_depth) {
   // 初始化第一级逻辑块最大数量，并且确保不超过HTABLE_HEADER_MAX_DEPTH
   max_depth_ = max_depth <= HTABLE_HEADER_MAX_DEPTH ? max_depth : HTABLE_HEADER_MAX_DEPTH;
 
-  // 一开始没有映射，所以没有逻辑块
+  // 一开始没有映射，所以没有第一级逻辑块
   for (size_t i = 0; i < MaxSize(); i++) {
     directory_page_ids_[i] = INVALID_PAGE_ID;
   }
 }
 
 auto ExtendibleHTableHeaderPage::HashToDirectoryIndex(uint32_t hash) const -> uint32_t {
-  // 使用哈希值的高位确定目录索引
+  // 使用哈希值的高位确定目录索引，如果最大深度为0的话就只有0索引
   if (max_depth_ == 0) {
     return 0;
   }
   uint32_t shift_bits = 32 - max_depth_;
-  uint32_t index = (hash >> shift_bits);
-  return index < MaxSize() ? index : index % MaxSize();
+  return hash >> shift_bits;
 }
 
 auto ExtendibleHTableHeaderPage::GetDirectoryPageId(uint32_t directory_idx) const -> uint32_t {
@@ -50,9 +49,6 @@ void ExtendibleHTableHeaderPage::SetDirectoryPageId(uint32_t directory_idx, page
   directory_page_ids_[directory_idx] = directory_page_id;
 }
 
-auto ExtendibleHTableHeaderPage::MaxSize() const -> uint32_t {
-  // 表示可拓展哈希中第一级逻辑块的大小
-  return 1U << max_depth_;
-}
+auto ExtendibleHTableHeaderPage::MaxSize() const -> uint32_t { return 1U << max_depth_; }
 
 }  // namespace bustub

@@ -74,6 +74,7 @@ auto DiskExtendibleHashTable<K, V, KC>::GetValue(const K &key, std::vector<V> *r
     -> bool {
   uint32_t hash = Hash(key);
 
+  // 由于每次查找每次查找都只会占有三个页面，所以不需要考虑页面用完就在作用域内释放
   // 获取头页面，在头页面中寻找对应的第二级目录页面
   auto header_guard = bpm_->FetchPageRead(header_page_id_);
   auto header_page = header_guard.As<ExtendibleHTableHeaderPage>();
@@ -166,11 +167,11 @@ auto DiskExtendibleHashTable<K, V, KC>::Insert(const K &key, const V &value, Tra
       return false;
     }
 
-    // 检查是否达到最大深度
+    // 检查是否达到最大深度，如果到达的话就无法继续分裂
     if (local_depth >= directory_max_depth_) {
       return false;
     }
-    // // bucket_guard 在这里作用域结束后自动释放，释放桶页面
+    // bucket_guard 在这里作用域结束后自动释放，释放桶页面
   }
 
   // 在必要的时候增加全局深度
@@ -332,7 +333,7 @@ auto DiskExtendibleHashTable<K, V, KC>::Remove(const K &key, Transaction *transa
   }
 
   // 如果桶为空，处理可能的合并
-  if (bucket_empty && local_depth > 0) {
+  while (bucket_empty && (local_depth > 0)) {
     // 获取分裂镜像桶信息
     uint32_t split_image_idx;
     page_id_t split_image_page_id;
@@ -345,12 +346,12 @@ auto DiskExtendibleHashTable<K, V, KC>::Remove(const K &key, Transaction *transa
       split_image_page_id = dir_page->GetBucketPageId(split_image_idx);
 
       if (split_image_page_id == INVALID_PAGE_ID) {
-        return true;  // 没有分裂镜像桶，直接返回
+        break;  // 没有分裂镜像桶，结束循环
       }
 
       split_image_local_depth = dir_page->GetLocalDepth(split_image_idx);
       if (split_image_local_depth != local_depth) {
-        return true;  // 局部深度不同，不能合并
+        break;  // 局部深度不同，不能合并，结束循环
       }
       // dir_guard 在这里作用域结束后自动释放
     }
@@ -376,17 +377,31 @@ auto DiskExtendibleHashTable<K, V, KC>::Remove(const K &key, Transaction *transa
         }
       }
 
-      // 检查是否可以减少全局深度
-      if (dir_page->CanShrink()) {
+      // 检查是否可以减少全局深度，并在可能的情况下减少
+      while (dir_page->CanShrink()) {
         dir_page->DecrGlobalDepth();
       }
+
+      // 更新循环变量，为下一次迭代做准备
+      local_depth = new_local_depth;
+      bucket_index = bucket_index & mask;  // 更新为合并后的桶索引
       // dir_guard 在这里作用域结束后自动释放
     }
 
     // 删除不再需要的桶页面
-    bpm_->DeletePage(bucket_page_id);
-  }
+    page_id_t old_bucket_page_id = bucket_page_id;
+    bucket_page_id = split_image_page_id;
+    bpm_->DeletePage(old_bucket_page_id);
 
+    // 检查合并后的桶是否为空，决定是否继续合并
+    {
+      auto bucket_guard = bpm_->FetchPageRead(bucket_page_id);
+      auto bucket_page = bucket_guard.As<ExtendibleHTableBucketPage<K, V, KC>>();
+      bucket_empty = bucket_page->IsEmpty();
+      // bucket_guard 在这里作用域结束后自动释放
+    }
+  }
+  
   return true;
 }
 
