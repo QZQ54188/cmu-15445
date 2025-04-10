@@ -61,5 +61,6 @@ class DeleteExecutor : public AbstractExecutor {
 
   /** The child executor from which RIDs for deleted tuples are pulled */
   std::unique_ptr<AbstractExecutor> child_executor_;
+  bool is_deleted_;  // 标志当前计划是不是已经执行过，因为delete计划只可以调用一次
 };
 }  // namespace bustub

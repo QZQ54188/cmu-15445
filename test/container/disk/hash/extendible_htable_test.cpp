@@ -205,7 +205,6 @@ TEST(ExtendibleHTableTest, RemoveTest2) {
   ht.Remove(3);
   ht.VerifyIntegrity();
 
-
   // ht.PrintHT();
   std::cout << "remove 2" << std::endl;
   ht.Remove(2);
@@ -291,7 +290,8 @@ TEST(ExtendibleHTableTest, GrowShrinkTest) {
     std::vector<int> res;
     bool got_value = ht.GetValue(i, &res);
     if (!got_value || res.size() != 1) {
-      std::cout << "Failed to get value for key: " << i << ", got_value: " << got_value << ", res.size: " << res.size() << std::endl;
+      std::cout << "Failed to get value for key: " << i << ", got_value: " << got_value << ", res.size: " << res.size()
+                << std::endl;
     }
     ASSERT_EQ(1, res.size());
     ASSERT_EQ(i, res[0]);

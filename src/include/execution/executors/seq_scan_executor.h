@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <memory>
 #include <vector>
 
 #include "execution/executor_context.h"
@@ -50,5 +51,8 @@ class SeqScanExecutor : public AbstractExecutor {
  private:
   /** The sequential scan plan node to be executed */
   const SeqScanPlanNode *plan_;
+  TableHeap *table_heap_;
+  std::vector<RID> rids_;              // 由于RID唯一标识一个tuple，rids_存放符合条件的元组
+  std::vector<RID>::iterator rid_it_;  // 用于顺序遍历tuple的迭代器
 };
 }  // namespace bustub

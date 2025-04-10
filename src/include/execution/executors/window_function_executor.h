@@ -13,12 +13,17 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
+#include "common/util/hash_util.h"
 #include "execution/executor_context.h"
 #include "execution/executors/abstract_executor.h"
+#include "execution/plans/aggregation_plan.h"
 #include "execution/plans/window_plan.h"
 #include "storage/table/tuple.h"
+#include "type/value.h"
+#include "type/value_factory.h"
 
 namespace bustub {
 
@@ -60,6 +65,7 @@ namespace bustub {
  * UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING when there is no ORDER BY clause.
  *
  */
+
 class WindowFunctionExecutor : public AbstractExecutor {
  public:
   /**
@@ -90,5 +96,17 @@ class WindowFunctionExecutor : public AbstractExecutor {
 
   /** The child executor from which tuples are obtained */
   std::unique_ptr<AbstractExecutor> child_executor_;
+
+  /** 存储从子执行器中收集到的排序后的元组 */
+  std::vector<Tuple> sorted_tuples_;
+
+  /** 存储每个窗口函数列的结果 */
+  std::unordered_map<uint32_t, std::vector<Value>> partition_results_;
+
+  /** 存储最终的结果集 */
+  std::vector<Tuple> result_set_;
+
+  /** 当前正在处理的结果集中的索引 */
+  size_t result_idx_{0};
 };
 }  // namespace bustub

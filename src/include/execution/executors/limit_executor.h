@@ -54,5 +54,7 @@ class LimitExecutor : public AbstractExecutor {
 
   /** The child executor from which tuples are obtained */
   std::unique_ptr<AbstractExecutor> child_executor_;
+  std::vector<Tuple> limit_res_;
+  std::vector<Tuple>::iterator limit_it_;
 };
 }  // namespace bustub

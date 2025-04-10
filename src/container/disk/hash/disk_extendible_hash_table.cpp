@@ -223,9 +223,8 @@ auto DiskExtendibleHashTable<K, V, KC>::Insert(const K &key, const V &value, Tra
     // 重新插入键值对
     if ((hash & diff_bit) == 0) {
       return old_bucket_page->Insert(key, value, cmp_);
-    } else {
-      return new_bucket_page->Insert(key, value, cmp_);
     }
+    return new_bucket_page->Insert(key, value, cmp_);
     // 两个桶的guard在这里作用域结束后自动释放
   }
 }
@@ -401,7 +400,7 @@ auto DiskExtendibleHashTable<K, V, KC>::Remove(const K &key, Transaction *transa
       // bucket_guard 在这里作用域结束后自动释放
     }
   }
-  
+
   return true;
 }
 
