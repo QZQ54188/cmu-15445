@@ -116,6 +116,12 @@ class TransactionManager {
    * heap. */
   void GarbageCollection();
 
+  /**
+   * 将事务状态设置为TAINTED
+   * @param txn 要设置状态的事务
+   */
+  void SetTxnTainted(Transaction *txn);
+
   /** protects txn map */
   std::shared_mutex txn_map_mutex_;
   /** All transactions, running or committed */

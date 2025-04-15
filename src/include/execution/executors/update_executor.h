@@ -67,5 +67,20 @@ class UpdateExecutor : public AbstractExecutor {
   /** The child executor to obtain value from */
   std::unique_ptr<AbstractExecutor> child_executor_;
   bool is_updated_;
+
+  /** 用于存储待更新的元组 */
+  std::vector<std::pair<Tuple, RID>> tuples_;
+  
+  /** 元组所在表的结构 */
+  const Schema *schema_;
+  
+  /** 当前事务 */
+  Transaction *txn_;
+  
+  /** 事务管理器 */
+  TransactionManager *txn_mgr_;
+  
+  /** 相关索引 */
+  std::vector<IndexInfo *> indexes_;
 };
 }  // namespace bustub
