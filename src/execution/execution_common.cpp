@@ -10,9 +10,55 @@
 
 namespace bustub {
 
+namespace tuple_reconstruction_helper{
+
+auto GetUndoLogSchema(const UndoLog &undo_log, const Schema *schema) -> Schema{
+  std::vector<Column> undo_logs_column;
+  for(size_t i = 0; i < schema->GetColumnCount(); i++){
+    if(undo_log.modified_fields_[i]){
+      undo_logs_column.push_back(schema->GetColumn(i));
+    }
+  }
+  return Schema(undo_logs_column);
+}
+
+void Modify(std::vector<Value>&reconstruct_values, const UndoLog &undo_log, const Schema &undo_logs_schema){
+  int col = 0;
+  for(size_t i = 0; i < reconstruct_values.size(); i++){
+    if (undo_log.modified_fields_[i]) {
+      reconstruct_values[i] = undo_log.tuple_.GetValue(&undo_logs_schema, col);
+      ++col;
+    }
+  }
+}
+
+}
+
 auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const TupleMeta &base_meta,
                       const std::vector<UndoLog> &undo_logs) -> std::optional<Tuple> {
-  UNIMPLEMENTED("not implemented");
+  int column_count = schema->GetColumnCount();
+  int is_deleted = base_meta.is_deleted_;
+
+  std::vector<Value> reconstruct_values;
+  reconstruct_values.reserve(column_count);
+  for (int i = 0; i < column_count; i++){
+    reconstruct_values.push_back(base_tuple.GetValue(schema, i));
+  }
+
+  // 应用undo logs
+  for(auto &ul : undo_logs){
+    is_deleted = ul.is_deleted_;
+    if(ul.is_deleted_){
+      continue;
+    }
+    auto undo_logs_schema = tuple_reconstruction_helper::GetUndoLogSchema(ul, schema);
+    tuple_reconstruction_helper::Modify(reconstruct_values, ul, undo_logs_schema);
+  }
+
+  if(is_deleted){
+    return std::nullopt;
+  }
+  return Tuple(reconstruct_values, schema);
 }
 
 void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const TableInfo *table_info,

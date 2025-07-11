@@ -17,38 +17,63 @@
 namespace bustub {
 
 SeqScanExecutor::SeqScanExecutor(ExecutorContext *exec_ctx, const SeqScanPlanNode *plan)
-    : AbstractExecutor(exec_ctx), plan_(plan) {}
+    : AbstractExecutor(exec_ctx), plan_(plan) {
+  auto table_info = exec_ctx->GetCatalog()->GetTable(plan->table_oid_);
+  schema_ = &table_info->schema_;
+  table_heap_ = table_info->table_.get();
+  transaction_ = exec_ctx->GetTransaction();
+  txn_mgr_ = exec_ctx->GetTransactionManager();
+}
 
 void SeqScanExecutor::Init() {
-  // 得到管理物理页面的页面堆
-  table_heap_ = GetExecutorContext()->GetCatalog()->GetTable(plan_->GetTableOid())->table_.get();
-  auto it = table_heap_->MakeEagerIterator();
-  rids_.clear();
-  // 首先将所有的元组添加进去，再根据filter进行筛选
-  while (!it.IsEnd()) {
-    rids_.emplace_back(it.GetRID());
-    ++it;
-  }
-  rid_it_ = rids_.begin();
+  iter_ = std::make_unique<TableIterator>(table_heap_->MakeIterator());
 }
 
 auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
-  // 当前遍历到的tuple
-  std::pair<TupleMeta, Tuple> cur_tuple;
-  do {
-    if (rid_it_ == rids_.end()) {
-      return false;
+  while(!iter_->IsEnd()){
+    auto &&[meta, t] = iter_->GetTuple();
+    std::optional<Tuple> recon_tuple = std::nullopt;
+
+    if(transaction_->GetReadTs() >= meta.ts_ || transaction_->GetTransactionId() == meta.ts_){
+      if(!meta.is_deleted_){
+        recon_tuple = std::make_optional(t);
+      }
+    }else{
+      std::vector<UndoLog> undo_logs{};
+      std::optional<UndoLink> undo_link = txn_mgr_->GetUndoLink(t.GetRid());
+      CollectUndoLogs(undo_logs, undo_link);
+      if (!undo_logs.empty() && transaction_->GetReadTs() >= undo_logs.back().ts_) {
+        // Double check undo_logs.
+        recon_tuple = ReconstructTuple(schema_, t, meta, undo_logs);
+      }
     }
-    cur_tuple = table_heap_->GetTuple(*rid_it_);
-    if (!(cur_tuple.first.is_deleted_)) {
-      // 如果当前元组没有被逻辑删除，那么就将其传参返回
-      *tuple = cur_tuple.second;
-      *rid = *rid_it_;
+    if (recon_tuple.has_value()) {
+      if (plan_->filter_predicate_ == nullptr || plan_->filter_predicate_->Evaluate(&recon_tuple.value(), *schema_).GetAs<bool>()) {
+        *tuple = std::move(recon_tuple.value());
+        *rid = iter_->GetRID();
+        ++(*iter_);
+        return true;
+      }
     }
-    ++rid_it_;
-  } while (cur_tuple.first.is_deleted_ ||
-           (plan_->filter_predicate_ && !plan_->filter_predicate_->Evaluate(tuple, GetOutputSchema()).GetAs<bool>()));
-  return true;
+
+    ++(*iter_);
+  }
+  return false;
+}
+
+void SeqScanExecutor::CollectUndoLogs(std::vector<UndoLog> &undo_logs, std::optional<UndoLink> &undo_link){
+  while(undo_link.has_value() && undo_link->prev_txn_ != INVALID_TXN_ID){
+    std::optional<UndoLog> undo_log = txn_mgr_->GetUndoLogOptional(undo_link.value());
+    if (!undo_log.has_value()) {
+      // Dangling pointer, made when garbage collection.
+      break;
+    }
+    undo_logs.push_back(undo_log.value());
+    if (transaction_->GetReadTs() >= undo_log->ts_) {
+      break;
+    }
+    undo_link = undo_log->prev_version_;
+  }
 }
 
 }  // namespace bustub

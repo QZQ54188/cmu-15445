@@ -16,9 +16,12 @@
 #include <vector>
 
 #include "execution/executor_context.h"
+#include "execution/execution_common.h"
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/seq_scan_plan.h"
 #include "storage/table/tuple.h"
+#include "concurrency/transaction.h"
+#include "concurrency/transaction_manager.h"
 
 namespace bustub {
 
@@ -49,10 +52,13 @@ class SeqScanExecutor : public AbstractExecutor {
   auto GetOutputSchema() const -> const Schema & override { return plan_->OutputSchema(); }
 
  private:
+  void CollectUndoLogs(std::vector<UndoLog> &undo_logs, std::optional<UndoLink> &undo_link);
   /** The sequential scan plan node to be executed */
   const SeqScanPlanNode *plan_;
   TableHeap *table_heap_;
-  std::vector<RID> rids_;              // 由于RID唯一标识一个tuple，rids_存放符合条件的元组
-  std::vector<RID>::iterator rid_it_;  // 用于顺序遍历tuple的迭代器
+  std::unique_ptr<TableIterator> iter_;
+  const Schema *schema_;
+  Transaction *transaction_;
+  TransactionManager *txn_mgr_;
 };
 }  // namespace bustub
