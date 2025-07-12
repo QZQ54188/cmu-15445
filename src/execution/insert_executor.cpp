@@ -39,13 +39,15 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   int cnt = 0;  // 记录插入的行数
   while (child_executor_->Next(tuple, rid)) {
     cnt++;
-    TupleMeta tuple_meta{0, false};
+    TupleMeta tuple_meta{.ts_ = exec_ctx_->GetTransaction()->GetTransactionId(), .is_deleted_ = false};
     auto result = table_info->table_->InsertTuple(tuple_meta, *tuple, exec_ctx_->GetLockManager(),
                                                   exec_ctx_->GetTransaction(), table_info->oid_);
     if (!result.has_value()) {
       // 没有插入成功的情况下
       continue;
     }
+    // MVCC: 记录写集
+    exec_ctx_->GetTransaction()->AppendWriteSet(plan_->GetTableOid(), result.value());
     for (auto index_info : indexes) {
       // 更新所有索引表中的记录
       auto key = tuple->KeyFromTuple(table_info->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());

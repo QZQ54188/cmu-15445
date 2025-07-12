@@ -55,8 +55,20 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
   std::unique_lock<std::mutex> commit_lck(commit_mutex_);
 
   // TODO(fall2023): acquire commit ts!
+  timestamp_t commit_ts = last_commit_ts_.load() + 1;
+  
+  // Update tuple temporary ts.
+  for (const auto &p : txn->GetWriteSets()) {
+    // p: {table_oid_t, std::unordered_set<RID>}
+    const auto table_info = catalog_->GetTable(p.first);
+    for (const auto &rid : p.second) {
+      auto is_delete = table_info->table_->GetTupleMeta(rid).is_deleted_;
+      table_info->table_->UpdateTupleMeta({.ts_ = commit_ts, .is_deleted_ = is_delete}, rid);
+    }
+  }
+  
+  txn->commit_ts_ = commit_ts;
   last_commit_ts_.fetch_add(1);
-  txn->commit_ts_ = last_commit_ts_.load();
 
   if (txn->state_ != TransactionState::RUNNING) {
     throw Exception("txn not in running state");
