@@ -20,6 +20,9 @@
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/delete_plan.h"
 #include "storage/table/tuple.h"
+#include "catalog/catalog.h"
+#include "concurrency/transaction.h"
+#include "concurrency/transaction_manager.h"
 
 namespace bustub {
 
@@ -61,6 +64,13 @@ class DeleteExecutor : public AbstractExecutor {
 
   /** The child executor from which RIDs for deleted tuples are pulled */
   std::unique_ptr<AbstractExecutor> child_executor_;
-  bool is_deleted_;  // 标志当前计划是不是已经执行过，因为delete计划只可以调用一次
+  
+  // New member variables for transaction management
+  std::vector<RID> rids_;
+  const Schema *schema_;
+  Transaction *txn_;
+  TransactionManager *txn_mgr_;
+  std::vector<IndexInfo *> indexes_;
+  const TableInfo *table_info_;
 };
 }  // namespace bustub

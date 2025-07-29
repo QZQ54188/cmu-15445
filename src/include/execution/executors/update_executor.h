@@ -21,6 +21,9 @@
 #include "execution/plans/update_plan.h"
 #include "storage/table/tuple.h"
 #include "type/value_factory.h"
+#include "catalog/catalog.h"
+#include "concurrency/transaction.h"
+#include "concurrency/transaction_manager.h"
 
 namespace bustub {
 
@@ -67,5 +70,12 @@ class UpdateExecutor : public AbstractExecutor {
   /** The child executor to obtain value from */
   std::unique_ptr<AbstractExecutor> child_executor_;
   bool is_updated_;
+  
+  // New member variables for transaction management
+  std::vector<std::pair<Tuple, RID>> tuples_;
+  const Schema *schema_;
+  Transaction *txn_;
+  TransactionManager *txn_mgr_;
+  std::vector<IndexInfo *> indexes_;
 };
 }  // namespace bustub

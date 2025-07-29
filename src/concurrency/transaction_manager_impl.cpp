@@ -122,4 +122,9 @@ void Transaction::SetTainted() {
   std::terminate();
 }
 
+void TransactionManager::SetTxnTainted(Transaction *txn) {
+  std::unique_lock<std::shared_mutex> lck(txn_map_mutex_);
+  txn->SetTainted();
+}
+
 }  // namespace bustub

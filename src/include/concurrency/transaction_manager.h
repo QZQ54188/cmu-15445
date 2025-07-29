@@ -116,6 +116,9 @@ class TransactionManager {
    * heap. */
   void GarbageCollection();
 
+  /** @brief Set a transaction to tainted state. This function should be used instead of directly calling txn->SetTainted(). */
+  void SetTxnTainted(Transaction *txn);
+
   /** protects txn map */
   std::shared_mutex txn_map_mutex_;
   /** All transactions, running or committed */

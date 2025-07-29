@@ -34,4 +34,11 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
 // your implementation. Please add your own ones as necessary so that you do not need to write
 // the same code everywhere.
 
+// Helper functions for update and delete executors
+auto CreateUndoLog(const TupleMeta &tuple_meta, const Schema *schema, const Tuple &old_tuple, const Tuple &new_tuple) -> UndoLog;
+auto CreateDeleteUndoLog(const TupleMeta &tuple_meta, const Schema *schema, const Tuple &old_tuple) -> UndoLog;
+auto MergeUndoLog(const Schema *schema, const UndoLog &old_undo_log, const UndoLog &new_undo_log) -> UndoLog;
+auto IsWriteWriteConflict(Transaction *txn, const TupleMeta &meta) -> bool;
+auto GetUndoLogSchema(const UndoLog &undo_log, const Schema *schema) -> Schema;
+
 }  // namespace bustub
