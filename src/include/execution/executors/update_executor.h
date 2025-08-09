@@ -77,5 +77,11 @@ class UpdateExecutor : public AbstractExecutor {
   Transaction *txn_;
   TransactionManager *txn_mgr_;
   std::vector<IndexInfo *> indexes_;
+
+  // 私有辅助方法
+  void HandleSelfModification(RID tuple_rid, const TupleMeta &tuple_meta, const Tuple &old_tuple, const Tuple &new_tuple);
+  void HandleNormalUpdate(RID tuple_rid, const TupleMeta &tuple_meta, const Tuple &old_tuple, const Tuple &new_tuple);
+  void UpdateBaseTuple(RID tuple_rid, const Tuple &new_tuple);
+  void UpdateWriteSetAndIndexes(RID tuple_rid, const Tuple &old_tuple, const Tuple &new_tuple);
 };
 }  // namespace bustub

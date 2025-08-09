@@ -72,5 +72,11 @@ class DeleteExecutor : public AbstractExecutor {
   TransactionManager *txn_mgr_;
   std::vector<IndexInfo *> indexes_;
   const TableInfo *table_info_;
+
+  // Private helper methods
+  void HandleSelfModification(RID tuple_rid, const TupleMeta &tuple_meta, const Tuple &old_tuple);
+  void HandleNormalDelete(RID tuple_rid, const TupleMeta &tuple_meta, const Tuple &old_tuple);
+  void UpdateBaseTuple(RID tuple_rid);
+  void UpdateWriteSetAndIndexes(RID tuple_rid, const Tuple &old_tuple);
 };
 }  // namespace bustub

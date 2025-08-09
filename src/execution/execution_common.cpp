@@ -61,6 +61,7 @@ auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const Tuple
     tuple_reconstruction_helper::Modify(reconstruct_values, ul, undo_logs_schema);
   }
 
+  // 如果最终状态是删除的，返回nullopt
   if(is_deleted){
     return std::nullopt;
   }
@@ -68,7 +69,7 @@ auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const Tuple
 }
 
 // Helper functions for update executor
-auto CreateUndoLog(const TupleMeta &tuple_meta, const Schema *schema, const Tuple &old_tuple, const Tuple &new_tuple) -> UndoLog {
+auto CreateUndoLog(const TupleMeta &tuple_meta, const Schema *schema, const Tuple &old_tuple, const Tuple &new_tuple, timestamp_t ts) -> UndoLog {
   std::vector<bool> modified_fields;
   std::vector<Value> modified_values;
   
@@ -90,19 +91,23 @@ auto CreateUndoLog(const TupleMeta &tuple_meta, const Schema *schema, const Tupl
       columns.push_back(schema->GetColumn(i));
     }
   }
-  // 如果没有修改的字段，使用所有字段
-  if(columns.empty()){
+  
+  // 如果没有修改的字段，使用所有字段并保存所有值
+  if (columns.empty()) {
     for (uint32_t i = 0; i < schema->GetColumnCount(); i++) {
       columns.push_back(schema->GetColumn(i));
+      modified_values.push_back(old_tuple.GetValue(schema, i));
+      modified_fields[i] = true;  // 标记所有字段为已修改
     }
   }
+  
   Schema partial_schema(columns);
   
   return UndoLog{
     false,  // is_deleted_
     modified_fields,
     Tuple(modified_values, &partial_schema),
-    tuple_meta.ts_,
+    ts,  // Use the provided timestamp instead of tuple_meta.ts_
     UndoLink{}  // prev_version_
   };
 }
@@ -180,12 +185,13 @@ auto MergeUndoLog(const Schema *schema, const UndoLog &old_undo_log, const UndoL
       columns.push_back(schema->GetColumn(i));
     }
   }
-  // 如果没有修改的字段，使用所有字段
-  if(columns.empty()){
-    for (uint32_t i = 0; i < schema->GetColumnCount(); i++) {
-      columns.push_back(schema->GetColumn(i));
-    }
+  
+  // 如果没有修改的字段，这是一个错误情况
+  // 因为如果两个undo log都没有修改任何字段，就不应该调用MergeUndoLog
+  if (columns.empty()) {
+    throw std::runtime_error("Cannot merge undo logs: no fields were modified in either undo log");
   }
+  
   Schema merged_schema(columns);
   
   return UndoLog{
@@ -199,12 +205,17 @@ auto MergeUndoLog(const Schema *schema, const UndoLog &old_undo_log, const UndoL
 
 auto IsWriteWriteConflict(Transaction *txn, const TupleMeta &meta) -> bool {
   // 如果元组的时间戳是当前事务的ID，说明当前事务已经修改过这个元组，没有冲突
-  if (meta.ts_ == txn->GetTransactionId()) {
+  if (meta.ts_ == txn->GetTransactionId() || meta.ts_ == (txn->GetTransactionId() + TXN_START_ID)) {
     return false;
   }
   
-  // 如果元组的时间戳大于等于当前事务的读时间戳，说明有其他事务在当前事务开始后修改了这个元组，有冲突
-  if (meta.ts_ >= txn->GetReadTs()) {
+  // 如果元组的时间戳是其他未提交事务的ID（meta.ts_ >= TXN_START_ID），有冲突
+  if (meta.ts_ >= TXN_START_ID) {
+    return true;
+  }
+  
+  // 如果元组的时间戳是已提交事务的提交时间戳，且在当前事务开始后提交，有冲突
+  if (meta.ts_ > txn->GetReadTs()) {
     return true;
   }
   

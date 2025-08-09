@@ -13,6 +13,7 @@
 #include <memory>
 
 #include "execution/executors/insert_executor.h"
+#include "concurrency/transaction_manager.h"
 
 namespace bustub {
 
@@ -48,6 +49,10 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     }
     // MVCC: 记录写集
     exec_ctx_->GetTransaction()->AppendWriteSet(plan_->GetTableOid(), result.value());
+    
+    // INSERT操作：设置版本链指向nullopt（表示没有前一个版本）
+    exec_ctx_->GetTransactionManager()->UpdateVersionLink(result.value(), std::nullopt, nullptr);
+    
     for (auto index_info : indexes) {
       // 更新所有索引表中的记录
       auto key = tuple->KeyFromTuple(table_info->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());

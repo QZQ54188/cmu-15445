@@ -46,57 +46,114 @@ void DeleteExecutor::Init() {
 }
 
 auto DeleteExecutor::Next(Tuple *tuple, RID *rid) -> bool {
+  if (rids_.empty()) {
+    return false;
+  }
+
   int count = 0;
-  if (!rids_.empty()) {
-    auto rid = rids_.back();
-
-    // Create new delete undo_log.
-    auto [tuple_meta, old_tuple] = table_info_->table_->GetTuple(rid);
-    auto new_undo_log = CreateDeleteUndoLog(tuple_meta, schema_, old_tuple);
-
-    // Update data (mark as deleted).
-    auto conflictChecker = [&](const TupleMeta &meta, const Tuple &table, RID rid) {
-      return !IsWriteWriteConflict(txn_, meta);
-    };
-    if (!table_info_->table_->UpdateTupleInPlace({txn_->GetTransactionId(), true}, old_tuple, rid, conflictChecker)) {
-      // Checker fail, set txn state to TAINTED, and throw an ExecutionException.
+  
+  // Process all collected RIDs
+  for (auto &tuple_rid : rids_) {
+    // Get current tuple metadata and data
+    auto [tuple_meta, old_tuple] = table_info_->table_->GetTuple(tuple_rid);
+    
+    // Check write-write conflict
+    if (IsWriteWriteConflict(txn_, tuple_meta)) {
       txn_mgr_->SetTxnTainted(txn_);
       throw ExecutionException("Write-write conflict detected in DeleteExecutor.");
     }
-    exec_ctx_->GetTransaction()->AppendWriteSet(plan_->GetTableOid(), rid);
     
-    // Update indexes.
-    for (auto &index_info : indexes_) {
-      auto old_key = old_tuple.KeyFromTuple(table_info_->schema_, *index_info->index_->GetKeySchema(),
-                                            index_info->index_->GetKeyAttrs());
-      index_info->index_->DeleteEntry(old_key, rid, txn_);
+    // Skip already deleted tuples
+    if (tuple_meta.is_deleted_) {
+      continue;
     }
-
-    // Update undo log.
-    auto old_version_link = txn_mgr_->GetVersionLink(rid);
+    
+    // Handle self-modification case (tuple_ts == txn_id)
     if (tuple_meta.ts_ == txn_->GetTransactionId()) {
-      // Has been updated by current transaction, merge old and new undo_log, then update undo_log.
-      // If no old_undo_log, skip merged and modify, because its the first tuple value.
-      if (old_version_link.has_value() && (size_t) old_version_link->prev_.prev_log_idx_ < txn_->GetUndoLogNum()) {
-        auto old_undo_log = txn_->GetUndoLog(old_version_link->prev_.prev_log_idx_);
-        auto merged_undo_log = MergeUndoLog(schema_, old_undo_log, new_undo_log);
-        txn_->ModifyUndoLog(old_version_link->prev_.prev_log_idx_, merged_undo_log);
-      }
+      HandleSelfModification(tuple_rid, tuple_meta, old_tuple);
     } else {
-      // Not updated by current transaction, append new undo log and update version link.
-      if (old_version_link.has_value()) {
-        new_undo_log.prev_version_ = old_version_link->prev_;
-      }
-      auto new_undo_link = txn_->AppendUndoLog(new_undo_log);
-      txn_mgr_->UpdateVersionLink(rid, std::make_optional<VersionUndoLink>({new_undo_link, false}), nullptr);
-      count += 1;
-      rids_.pop_back();
+      // Normal delete case: create new undo log and update version chain
+      HandleNormalDelete(tuple_rid, tuple_meta, old_tuple);
     }
+    
+    // Update base tuple (mark as deleted)
+    UpdateBaseTuple(tuple_rid);
+    
+    // Update write set and indexes
+    UpdateWriteSetAndIndexes(tuple_rid, old_tuple);
+    
+    count++;
   }
+  
+  // Clear RIDs list to indicate processing is complete
+  rids_.clear();
+  
+  // Return the number of deleted tuples
+  std::vector<Value> values = {ValueFactory::GetIntegerValue(count)};
+  *tuple = Tuple(values, &GetOutputSchema());
+  return true;
+}
 
-  std::vector<Value> v = {ValueFactory::GetIntegerValue(count)};
-  *tuple = Tuple(v, &GetOutputSchema());
-  return count >= 1;
+void DeleteExecutor::HandleSelfModification(RID tuple_rid, const TupleMeta &tuple_meta, const Tuple &old_tuple) {
+  // Get version link
+  auto old_version_link = txn_mgr_->GetVersionLink(tuple_rid);
+  
+  if (old_version_link.has_value() && 
+      (size_t)old_version_link->prev_.prev_log_idx_ < txn_->GetUndoLogNum()) {
+    // There exists an undo log from current transaction, meaning a previous UPDATE/DELETE operation
+    // was performed, need to merge undo logs
+    auto old_undo_log = txn_->GetUndoLog(old_version_link->prev_.prev_log_idx_);
+    auto new_undo_log = CreateDeleteUndoLog(tuple_meta, schema_, old_tuple);
+    auto merged_undo_log = MergeUndoLog(schema_, old_undo_log, new_undo_log);
+    txn_->ModifyUndoLog(old_version_link->prev_.prev_log_idx_, merged_undo_log);
+  }
+  // If no undo log exists, it means this was just an INSERT operation, no need to maintain version chain
+  // Just update the base tuple directly
+}
+
+void DeleteExecutor::HandleNormalDelete(RID tuple_rid, const TupleMeta &tuple_meta, const Tuple &old_tuple) {
+  // Create new delete undo log
+  auto new_undo_log = CreateDeleteUndoLog(tuple_meta, schema_, old_tuple);
+  
+  // Set previous version link if exists
+  auto old_version_link = txn_mgr_->GetVersionLink(tuple_rid);
+  if (old_version_link.has_value()) {
+    new_undo_log.prev_version_ = old_version_link->prev_;
+  }
+  
+  // Append undo log and update version link
+  auto new_undo_link = txn_->AppendUndoLog(new_undo_log);
+  txn_mgr_->UpdateVersionLink(tuple_rid, std::make_optional<VersionUndoLink>({new_undo_link, false}), nullptr);
+}
+
+void DeleteExecutor::UpdateBaseTuple(RID tuple_rid) {
+  // Update base tuple, mark as deleted with current transaction ID as timestamp
+  auto delete_meta = TupleMeta{txn_->GetTransactionId(), true};
+  auto conflict_checker = [&](const TupleMeta &meta, const Tuple &table_tuple, RID rid) {
+    return !IsWriteWriteConflict(txn_, meta);
+  };
+  
+  // For delete, we don't need to pass the tuple data since we're just marking as deleted
+  // We'll use the existing tuple data from the table
+  auto [existing_meta, existing_tuple] = table_info_->table_->GetTuple(tuple_rid);
+  if (!table_info_->table_->UpdateTupleInPlace(delete_meta, existing_tuple, tuple_rid, conflict_checker)) {
+    txn_mgr_->SetTxnTainted(txn_);
+    throw ExecutionException("Write-write conflict detected during tuple deletion.");
+  }
+}
+
+void DeleteExecutor::UpdateWriteSetAndIndexes(RID tuple_rid, const Tuple &old_tuple) {
+  // Update write set
+  txn_->AppendWriteSet(plan_->GetTableOid(), tuple_rid);
+  
+  // Update indexes - delete entries for the old tuple
+  for (auto &index_info : indexes_) {
+    // Create a non-const copy of the tuple to call KeyFromTuple
+    Tuple tuple_copy = old_tuple;
+    auto old_key = tuple_copy.KeyFromTuple(table_info_->schema_, *index_info->index_->GetKeySchema(),
+                                          index_info->index_->GetKeyAttrs());
+    index_info->index_->DeleteEntry(old_key, tuple_rid, txn_);
+  }
 }
 
 }  // namespace bustub
