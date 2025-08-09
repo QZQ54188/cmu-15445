@@ -38,8 +38,9 @@ class Watermark {
   std::unordered_map<timestamp_t, int> current_reads_;
 
   std::set<timestamp_t> read_ts_set{};
-  auto RecordReadTs(timestamp_t read_ts) -> void;
-  auto RemoveReadRs(timestamp_t read_ts) -> void;
+  
+ private:
+  auto UpdateWatermark() -> void;
 };
 
 };  // namespace bustub

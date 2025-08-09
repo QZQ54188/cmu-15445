@@ -30,25 +30,30 @@ void SeqScanExecutor::Init() {
 }
 
 auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
-  while(!iter_->IsEnd()){
-    auto &&[meta, t] = iter_->GetTuple();
+  while (!iter_->IsEnd()) {
+    auto [meta, t] = iter_->GetTuple();
     std::optional<Tuple> recon_tuple = std::nullopt;
 
-    if(transaction_->GetReadTs() >= meta.ts_ || transaction_->GetTransactionId() == meta.ts_){
-      if(!meta.is_deleted_){
+    // 检查当前版本是否可见
+    if (transaction_->GetReadTs() >= meta.ts_ || transaction_->GetTransactionId() == meta.ts_) {
+      if (!meta.is_deleted_) {
         recon_tuple = std::make_optional(t);
       }
-    }else{
+    } else {
+      // 查找历史版本
       std::vector<UndoLog> undo_logs{};
-      std::optional<UndoLink> undo_link = txn_mgr_->GetUndoLink(t.GetRid());
+      auto undo_link = txn_mgr_->GetUndoLink(t.GetRid());
       CollectUndoLogs(undo_logs, undo_link);
+      
       if (!undo_logs.empty() && transaction_->GetReadTs() >= undo_logs.back().ts_) {
-        // Double check undo_logs.
         recon_tuple = ReconstructTuple(schema_, t, meta, undo_logs);
       }
     }
+
+    // 检查过滤条件并返回结果
     if (recon_tuple.has_value()) {
-      if (plan_->filter_predicate_ == nullptr || plan_->filter_predicate_->Evaluate(&recon_tuple.value(), *schema_).GetAs<bool>()) {
+      if (plan_->filter_predicate_ == nullptr || 
+          plan_->filter_predicate_->Evaluate(&recon_tuple.value(), *schema_).GetAs<bool>()) {
         *tuple = std::move(recon_tuple.value());
         *rid = iter_->GetRID();
         ++(*iter_);

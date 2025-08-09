@@ -217,149 +217,96 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
   fmt::println(stderr, "debug_hook: {}", info);
 
   // 遍历表堆中的所有元组
-  auto iter = table_heap->MakeEagerIterator();
-  const Schema &schema = table_info->schema_;  // 使用引用访问Schema对象
-  
-  // 从头开始遍历直到结束
+  auto iter = table_heap->MakeIterator();
   while (!iter.IsEnd()) {
     auto rid = iter.GetRID();
-    auto [meta, tuple] = table_heap->GetTuple(rid);
-    std::stringstream ss;
+    auto [meta, tuple] = iter.GetTuple();
     
-    // 打印RID和当前元组信息
-    ss << "RID=" << rid.GetPageId() << "/" << rid.GetSlotNum();
+    // 打印当前元组信息
+    fmt::print(stderr, "RID={}/{}", rid.GetPageId(), rid.GetSlotNum());
     
-    // 检查时间戳是否是事务ID，如果是则打印为txnX
+    // 打印时间戳
     if (meta.ts_ >= TXN_START_ID) {
-      auto txn_id = meta.ts_ ^ TXN_START_ID;  // 转换为人类可读格式
-      ss << " ts=txn" << txn_id;
+      // 这是一个事务ID（临时时间戳）
+      fmt::print(stderr, " ts=txn{}", meta.ts_ ^ TXN_START_ID);
     } else {
-      ss << " ts=" << meta.ts_;
+      // 这是一个提交的时间戳
+      fmt::print(stderr, " ts={}", meta.ts_);
     }
     
-    // 如果元组已删除，则标记
+    // 打印元组内容
     if (meta.is_deleted_) {
-      ss << " <del marker>";
+      fmt::print(stderr, " <del marker>");
     }
+    fmt::print(stderr, " tuple=(");
     
-    // 打印元组的值
-    ss << " tuple=(";
-    for (uint32_t i = 0; i < schema.GetColumnCount(); i++) {
-      if (i > 0) {
-        ss << ", ";
+    auto schema = &table_info->schema_;
+    for (size_t i = 0; i < schema->GetColumnCount(); i++) {
+      if (i > 0) fmt::print(stderr, ", ");
+      
+      if (meta.is_deleted_) {
+        fmt::print(stderr, "<NULL>");
+      } else {
+        auto value = tuple.GetValue(schema, i);
+        if (value.IsNull()) {
+          fmt::print(stderr, "<NULL>");
+        } else {
+          fmt::print(stderr, "{}", value.ToString());
+        }
+      }
+    }
+    fmt::println(stderr, ")");
+    
+    // 遍历版本链
+    auto undo_link = txn_mgr->GetUndoLink(rid);
+    while (undo_link.has_value() && undo_link->IsValid()) {
+      auto undo_log_opt = txn_mgr->GetUndoLogOptional(*undo_link);
+      if (!undo_log_opt.has_value()) {
+        // 悬空指针，垃圾回收时产生
+        break;
       }
       
-      const Value &val = tuple.GetValue(&schema, i);
-      if (val.IsNull()) {
-        ss << "<NULL>";
+      auto undo_log = undo_log_opt.value();
+      
+      // 打印undo log信息
+      fmt::print(stderr, "  txn{}@{}", 
+                 undo_link->prev_txn_ ^ TXN_START_ID, 
+                 undo_link->prev_log_idx_);
+      
+      if (undo_log.is_deleted_) {
+        fmt::print(stderr, " <del>");
       } else {
-        switch (val.GetTypeId()) {
-          case TypeId::INTEGER:
-            ss << val.GetAs<int32_t>();
-            break;
-          case TypeId::DECIMAL:
-            ss << val.GetAs<double>();
-            break;
-          case TypeId::BOOLEAN:
-            ss << (val.GetAs<bool>() ? "true" : "false");
-            break;
-          default:
-            ss << val.ToString();
-        }
-      }
-    }
-    ss << ")";
-    fmt::println(stderr, "{}", ss.str());
-    
-    // 获取并打印版本链
-    auto version_link = txn_mgr->GetVersionLink(rid);
-    if (version_link.has_value()) {
-      auto undo_link = version_link->prev_;
-      while (undo_link.IsValid()) {
-        std::stringstream undo_ss;
-        auto undo_log = txn_mgr->GetUndoLog(undo_link);
-        
-        // 缩进显示
-        undo_ss << "  ";
-        
-        // 显示事务ID
-        if (undo_link.prev_txn_ >= TXN_START_ID) {
-          auto txn_id = undo_link.prev_txn_ ^ TXN_START_ID;
-          undo_ss << "txn" << txn_id;
-        } else {
-          undo_ss << "ts" << undo_link.prev_txn_;
-        }
-        
-        undo_ss << "@" << undo_link.prev_log_idx_ << " ";
-        
-        // 如果是删除标记
-        if (undo_log.is_deleted_) {
-          undo_ss << "<del>";
-        } else {
-          // 构建部分修改字段
-          std::vector<Column> modified_columns;
-          std::vector<uint32_t> modified_indexes;
+        fmt::print(stderr, " (");
+        for (size_t i = 0; i < schema->GetColumnCount(); i++) {
+          if (i > 0) fmt::print(stderr, ", ");
           
-          for (uint32_t i = 0; i < undo_log.modified_fields_.size(); i++) {
-            if (undo_log.modified_fields_[i]) {
-              modified_columns.push_back(schema.GetColumn(i));
-              modified_indexes.push_back(i);
-            }
-          }
-          
-          // 打印修改的值
-          undo_ss << "(";
-          for (uint32_t i = 0; i < schema.GetColumnCount(); i++) {
-            if (i > 0) {
-              undo_ss << ", ";
-            }
-            
-            auto it = std::find(modified_indexes.begin(), modified_indexes.end(), i);
-            if (it != modified_indexes.end()) {
-              size_t idx = it - modified_indexes.begin();
-              Schema partial_schema(modified_columns);
-              const Value &val = undo_log.tuple_.GetValue(&partial_schema, idx);
-              
-              if (val.IsNull()) {
-                undo_ss << "<NULL>";
-              } else {
-                switch (val.GetTypeId()) {
-                  case TypeId::INTEGER:
-                    undo_ss << val.GetAs<int32_t>();
-                    break;
-                  case TypeId::DECIMAL:
-                    undo_ss << val.GetAs<double>();
-                    break;
-                  case TypeId::BOOLEAN:
-                    undo_ss << (val.GetAs<bool>() ? "true" : "false");
-                    break;
-                  default:
-                    undo_ss << val.ToString();
-                }
-              }
+          if (i < undo_log.modified_fields_.size() && undo_log.modified_fields_[i]) {
+            // 这个字段被修改了，显示旧值
+            auto value = undo_log.tuple_.GetValue(schema, i);
+            if (value.IsNull()) {
+              fmt::print(stderr, "<NULL>");
             } else {
-              undo_ss << "_";  // 未修改的字段用下划线表示
+              fmt::print(stderr, "{}", value.ToString());
             }
+          } else {
+            // 这个字段没有被修改，显示占位符
+            fmt::print(stderr, "_");
           }
-          undo_ss << ")";
         }
-        
-        // 打印时间戳
-        if (undo_log.ts_ >= TXN_START_ID) {
-          auto txn_id = undo_log.ts_ ^ TXN_START_ID;  // 转换为人类可读格式
-          undo_ss << " ts=txn" << txn_id;
-        } else {
-          undo_ss << " ts=" << undo_log.ts_;
-        }
-        
-        fmt::println(stderr, "{}", undo_ss.str());
-        
-        // 获取下一个版本
-        undo_link = undo_log.prev_version_;
+        fmt::print(stderr, ")");
       }
+      
+      // 打印时间戳
+      if (undo_log.ts_ >= TXN_START_ID) {
+        fmt::println(stderr, " ts=txn{}", undo_log.ts_ ^ TXN_START_ID);
+      } else {
+        fmt::println(stderr, " ts={}", undo_log.ts_);
+      }
+      
+      // 移动到下一个版本
+      undo_link = undo_log.prev_version_;
     }
     
-    // 移到下一个元组
     ++iter;
   }
 }
